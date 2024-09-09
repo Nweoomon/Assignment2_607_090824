@@ -1,0 +1,200 @@
+---
+title: "Assignment_2_SQL_R"
+author: "Nwe Oo Mon (Nina)"
+date: "2024-09-08"
+output: html_document
+---
+# Creating MySQL database
+Six popular animated movies were chosen and ten friends/families were asked to rate each of these movies that they have seen on a scale of 1 to 5. The results were stored in MySQL database using the following SQL commands:
+
+#### Drop and Create Table: 
+The movie_ratings table is created to store ratings for six popular animated movies, with each column representing a movie, and participant_id identifying each respondent.
+
+```{r sqlcode-1, echo=FALSE, results="asis"}
+knitr::include_graphics("img/SQLcode_1.png")
+```
+
+#### Load Data from CSV: 
+Data is loaded from a CSV file using LOAD DATA INFILE. The script handles missing values (-1) by converting them to NULL.
+
+```{r sqlcode-2, echo=FALSE, results="asis"}
+knitr::include_graphics("img/SQLcode_2.png")
+```
+
+#### Data Query: 
+Data Query to display the data and the count of the total entries.
+
+```{r sqlcode-3, echo=FALSE, results="asis"}
+knitr::include_graphics("img/SQLcode_3.png")
+```
+
+# Loading the information from the SQL database into an R dataframe
+
+#### Installing and Loading Required Packages
+```{r setup}
+if (!requireNamespace("DBI", quietly = TRUE)) install.packages("DBI")
+if (!requireNamespace("RMariaDB", quietly = TRUE)) install.packages("RMariaDB")
+if (!requireNamespace("proxy", quietly = TRUE)) install.packages("proxy")
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+if (!requireNamespace("naniar", quietly = TRUE)) install.packages("naniar")
+
+library(DBI)
+library(RMariaDB)
+library(proxy)
+library(ggplot2)
+library(naniar)
+```
+
+#### Connecting to the MySQL Database and Loading Data
+
+Note - to use a password without having to share the password with people who are viewing your code, the password was stored in a .Renviron file in home directory (~) by adding as MYSQL_PWD=typethepassword.
+
+
+```{r connect-to-mysql, echo=TRUE, message=FALSE, warning=FALSE}
+
+con <- dbConnect(
+  RMariaDB::MariaDB(),
+  user = 'root',               
+  password = Sys.getenv("MYSQL_PWD"),    
+  dbname = 'movies_rating',     
+  host = 'localhost',           
+  port = 3306                   
+)
+
+# Check if the connection is successful
+if (!is.null(con)) {
+  print("Connected successfully!")
+} else {
+  print("Connection failed.")
+}
+
+# Load the data from the MySQL table into an R dataframe
+ratings <- dbGetQuery(con, "SELECT * FROM movie_ratings")
+
+# Close the database connection
+dbDisconnect(con)
+```
+# Visualizing of results
+
+#### Visualizing missing data pattern
+
+```{r missing_var}
+ggplot_missing <- gg_miss_var(ratings, show_pct = TRUE) + 
+  labs(title = "Missing Data Pattern in Movie Ratings")
+print(ggplot_missing)
+```
+
+#### Average ratings for movies
+Calculate the average ratings for each movie, ignoring Null values.
+Convert to a data frame for visualization
+Plot the average ratings
+
+```{r average_ratings}
+average_ratings <- colMeans(ratings[,-1], na.rm = TRUE)
+
+average_ratings_df <- data.frame(
+  Movie = c("The Lion King", "Frozen", "Toy Story", "Finding Nemo", "Shrek", "Spirited Away"),
+  Average_Rating = average_ratings
+)
+
+ggplot(average_ratings_df, aes(x = Average_Rating, y = Movie, fill = Movie)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(Average_Rating, 2)), vjust = 0.5, hjust = -0.2, size = 4) + # Data labels
+  labs(title = "Average Ratings of Animated Movies", x = "Average Rating", y = "Movie") +
+  scale_fill_brewer(palette = "Set3") + # Different colors for each movie
+  theme_minimal() +
+  coord_flip()
+```
+
+# Recommending movies
+
+In the recommendation system, a matrix of user ratings (ratings_matrix) was used to predict movies that a user has not rated. First a similarity matrix (similarity_matrix) was computed using cosine similarity to measure how similar each user is to the others. The recommendation system calculates predicted ratings for movies that a user has not rated yet. Using the recommend_movies function, the system first identifies these unrated movies. It then computes a weighted score for each unrated movie based on the ratings from users with similar preferences. The result is a list of predicted scores, indicating how likely the user is to enjoy each movie they haven't rated yet.
+
+```{r recommendations, results='asis'}
+ratings_matrix <- as.matrix(ratings[,-1])  
+rownames(ratings_matrix) <- ratings$participant_id
+
+similarity_matrix <- as.matrix(simil(ratings_matrix, method = "cosine"))
+
+recommend_movies <- function(user, ratings_matrix, similarity_matrix) {
+  user_index <- which(rownames(ratings_matrix) == user)
+
+  user_similarity <- similarity_matrix[user_index, -user_index]
+  
+  unrated_movies <- which(is.na(ratings_matrix[user_index, ]))
+  
+  # If no unrated movies, return a message
+  if (length(unrated_movies) == 0) return("No movies to recommend")
+  
+  movie_scores <- unlist(sapply(unrated_movies, function(movie) {
+    weighted_sum <- sum(user_similarity * ratings_matrix[-user_index, movie], na.rm = TRUE)
+    sum_similarity <- sum(user_similarity, na.rm = TRUE)
+    return(ifelse(sum_similarity == 0, 0, weighted_sum / sum_similarity))
+  }))
+  
+  return(sort(movie_scores, decreasing = TRUE))
+}
+```
+
+```{r recommendations_user1, results='asis'}
+# Get recommendations for "User1"
+recommendations <- recommend_movies('1', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user2, results='asis'}
+# Get recommendations for "User2"
+recommendations <- recommend_movies('2', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user3, results='asis'}
+# Get recommendations for "User3"
+recommendations <- recommend_movies('3', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user4, results='asis'}
+# Get recommendations for "User4"
+recommendations <- recommend_movies('4', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user5, results='asis'}
+# Get recommendations for "User5"
+recommendations <- recommend_movies('5', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user6, results='asis'}
+# Get recommendations for "User6"
+recommendations <- recommend_movies('6', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user7, results='asis'}
+# Get recommendations for "User7"
+recommendations <- recommend_movies('7', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user8, results='asis'}
+# Get recommendations for "User8"
+recommendations <- recommend_movies('8', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user9, results='asis'}
+# Get recommendations for "User9"
+recommendations <- recommend_movies('9', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+```{r recommendations_user10, results='asis'}
+# Get recommendations for "User10"
+recommendations <- recommend_movies('10', ratings_matrix, similarity_matrix)
+print(recommendations)
+```
+
+
+
